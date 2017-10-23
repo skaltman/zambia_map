@@ -1,0 +1,112 @@
+---
+title: "zambia map"
+author: "Sara Altman"
+date: "10/22/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(tidyverse)
+library(sf)
+library(stringr)
+library(rvest)
+```
+
+```{r}
+districts <- "~/zambia_data/districts/ZAM-districts.shp"
+wards <- "~/zambia_data/wards/ZAM-wards.shp"
+provinces <- "~/zambia_data/provinces/ZAM-provinces.shp"
+
+url_province_pop <- "https://en.wikipedia.org/wiki/Provinces_of_Zambia"
+css_selector <- "#mw-content-text > div > table:nth-child(10)" 
+#collapsibleTable1
+```
+
+```{r}
+province_pop_data <-
+  read_html(url_province_pop) %>% 
+  html_node(css = css_selector) %>% 
+  html_table() %>% 
+  select(province = `Province[1]`,
+         population = Population) %>% 
+  mutate_all(~str_replace(., "[[:punct:]]\\d[[:punct:]]", "")) %>% 
+  mutate(population = as.integer(str_replace_all(population, ",", "")))
+
+province_pop_data
+```
+
+
+
+```{r}
+district_geo <- 
+  st_read(districts) %>% 
+  rename_all(tolower)
+
+ward_geo <-
+  st_read(wards) %>% 
+  rename_all(tolower) %>% 
+  rename(province = provincena,
+         district = districtna)
+
+province_geo <-
+  st_read(provinces) %>% 
+  rename_all(tolower)
+```
+
+```{r}
+province_wiki <-
+  province_geo %>% 
+  inner_join(province_pop_data, by = "province")
+```
+
+### Population 
+
+Population data is given for each ward. We want population data for each level.
+```{r}
+district_pop <-
+  ward_geo %>%
+  as_tibble() %>% 
+  group_by(province, district) %>% 
+  summarise(district_pop = sum(pop2010))
+
+province_pop <-
+  district_pop %>% 
+  summarise(province_pop = sum(district_pop))
+```
+
+Join population and geo data
+```{r}
+district <-
+  district_geo %>% 
+  inner_join(district_pop, by = "district")
+
+province <-
+  province_geo %>% 
+  inner_join(province_pop, by = "province")
+
+ward <-
+  ward_geo
+```
+
+### Create geoJSON files
+```{r}
+if (!file.exists('province.geojson')) {
+    province %>% 
+    st_write('province.geojson')
+}
+
+if (!file.exists('ward.geojson')) {
+    ward %>% 
+    st_write('ward.geojson')
+}
+
+if (!file.exists('district.geojson')) {
+    district %>% 
+    st_write('district.geojson')
+}
+```
+
